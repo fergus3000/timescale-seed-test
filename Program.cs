@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 
 namespace TimescaleSeedTest
@@ -25,20 +27,23 @@ namespace TimescaleSeedTest
                 createUtil.CreateDatabase(true);
             }
 
+            Console.WriteLine("Batch generating");
+            var eventBatches = EventDataGenerator.BatchGenerateEventsChronological(seedSettings);
+            var batchCount = eventBatches.Count();
             Console.WriteLine("Seeding events");
             var mainSeedTimer = Stopwatch.StartNew();
-            var eventRepo = new EventRepo(connFactory);
-            for (var i = 0; i < seedSettings.NbrSeriesToSeed; i++)
+            var opt = new ParallelOptions()
             {
-                var cts = new CancellationTokenSource(TimeSpan.FromMinutes(60));
-                var seriesId = seedSettings.InitialSeriesId + i;
-                Console.WriteLine($"About to seed series dbId {seriesId}");
-                var seriesTimer = Stopwatch.StartNew();
-                var events = EventDataGenerator.GenerateEvents(seedSettings, seriesId);
-                eventRepo.Insert(events, cts.Token).GetAwaiter().GetResult();
-                seriesTimer.Stop();
-                Console.WriteLine($"Series dbId {seriesId} finished in {seriesTimer.Elapsed}.");
-            }
+                MaxDegreeOfParallelism = seedSettings.MaxParallelThreads
+            };
+            Parallel.ForEach(eventBatches, opt, (evts, loopState, batchNo) =>
+            {
+                var batchSw = Stopwatch.StartNew();
+                var repo = new EventRepo(connFactory);
+                repo.Insert(evts, CancellationToken.None).GetAwaiter().GetResult();
+                batchSw.Stop();
+                Console.WriteLine($"Wrote batch {batchNo}/{batchCount}. Batch took {batchSw.Elapsed:ss\\.ffffff} sec");
+            });
             mainSeedTimer.Stop();
             Console.WriteLine($"Finished in {mainSeedTimer.Elapsed}. Press enter");
             Console.ReadLine();
