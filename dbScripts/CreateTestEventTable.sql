@@ -19,6 +19,7 @@ ALTER TABLE public.event_table
     OWNER to postgres; 	
     
 -- create hypertables for timeseries tables
+-- using space partitioning on series_id, setting interval to 1 day
 SELECT create_hypertable('event_table', 'event_time', 'series_id', 1, chunk_time_interval => interval '1 day', create_default_indexes=>FALSE);
 
 CREATE INDEX event_table_series_id_event_time_index
